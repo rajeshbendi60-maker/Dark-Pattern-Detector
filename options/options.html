@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Detector Settings</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; color: #333; display: flex; justify-content: center; padding: 40px; }
+    .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 500px; }
+    h1 { color: #1e3c72; margin-top: 0; }
+    .setting-group { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .setting-info h3 { margin: 0 0 5px 0; font-size: 16px; }
+    .setting-info p { margin: 0; font-size: 13px; color: #666; }
+    
+    .premium-feature { background: #f0f7ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }
+    
+    .text-input { width: 100%; margin-top: 10px; padding: 10px; border-radius: 6px; border: 1px solid #bdc3c7; font-family: monospace; }
+    
+    .switch { position: relative; display: inline-block; width: 44px; height: 24px; min-width: 44px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #27ae60; }
+    input:checked + .slider:before { transform: translateX(20px); }
+    #status { color: #27ae60; font-weight: bold; height: 20px; text-align: center; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ Scanner Settings</h1>
+    <p>Configure your 8 advanced protection features below.</p>
+
+    <div class="setting-group premium-feature">
+      <div class="setting-info" style="width: 100%;">
+        <h3>🧠 AI-Powered Detection (Feature 8)</h3>
+        <p>Use Gemini AI to catch brand new manipulative tactics by analyzing the page context.</p>
+        <input type="text" id="aiKey" class="text-input" placeholder="Enter Gemini API Key (e.g., AIzaSy...)">
+      </div>
+    </div>
+
+    <div class="setting-group premium-feature" style="border-left-color: #e67e22;">
+      <div class="setting-info" style="width: 100%;">
+        <h3>☁️ Firebase Cloud Database (Feature 7)</h3>
+        <p>Send reported sites to your global database. Enter your Firebase Project ID.</p>
+        <input type="text" id="firebaseId" class="text-input" placeholder="e.g., my-dark-pattern-db-123">
+      </div>
+    </div>
+
+    <div class="setting-group premium-feature" style="border-left-color: #2ecc71;">
+      <div class="setting-info">
+        <h3>🛡️ Active Auto-Fix (Feature 6)</h3>
+        <p>Automatically un-checks sneaky boxes and forces hidden cancel buttons to be fully visible!</p>
+      </div>
+      <label class="switch"><input type="checkbox" id="autoFix"><span class="slider"></span></label>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-info"><h3>Sneaky Pre-checked Boxes</h3></div>
+      <label class="switch"><input type="checkbox" id="checkPreChecked"><span class="slider"></span></label>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-info"><h3>Confirmshaming Text</h3></div>
+      <label class="switch"><input type="checkbox" id="checkConfirmshaming"><span class="slider"></span></label>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-info"><h3>Fake Scarcity & Urgency</h3></div>
+      <label class="switch"><input type="checkbox" id="checkScarcity"><span class="slider"></span></label>
+    </div>
+
+    <div class="setting-group" style="border:none;">
+      <div class="setting-info"><h3>Hidden/Tiny Buttons</h3></div>
+      <label class="switch"><input type="checkbox" id="checkHidden"><span class="slider"></span></label>
+    </div>
+
+    <div id="status"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

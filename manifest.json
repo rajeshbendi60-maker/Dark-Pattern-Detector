@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Dark Pattern Detector",
+  "version": "5.2",
+  "description": "Sider-style Dark Pattern Overlay Extension",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Toggle Dark Pattern Sidebar"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "MacCtrl+Shift+X"
+      },
+      "description": "Toggle Dark Pattern Detector"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/hotkey.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/scanner.js", "content/overlay.js", "content/sider.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "popup/popup.html",
+        "popup/popup.css",
+        "popup/popup.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
