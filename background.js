@@ -17,12 +17,22 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Scan for Manipulation (AI)',
     contexts: ['selection']
   });
+  chrome.contextMenus.create({
+    id: 'scan_fake_review',
+    title: 'Analyze for Fake Review (AI)',
+    contexts: ['selection']
+  });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'scan_dark_pattern') {
     chrome.tabs.sendMessage(tab.id, {
       action: 'context_menu_scan',
+      text: info.selectionText
+    });
+  } else if (info.menuItemId === 'scan_fake_review') {
+    chrome.tabs.sendMessage(tab.id, {
+      action: 'fake_review_scan',
       text: info.selectionText
     });
   }

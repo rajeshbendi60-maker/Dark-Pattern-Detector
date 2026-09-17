@@ -5,16 +5,23 @@ const DARK_PATTERNS = {
   CONFIRMSHAMING: 'Manipulative Text',
   HIDDEN_BUTTON: 'Hidden/Obscured Button',
   FAKE_SCARCITY: 'Fake Urgency/Scarcity',
-  AI_DETECTED: 'AI Intelligence Warning'
+  AI_DETECTED: 'AI Intelligence Warning',
+  COOKIE_BANNER: 'Cookie Banner',
+  HIDDEN_FEE: 'Hidden Fee Detected',
+  SUBSCRIPTION_TRAP: 'Subscription Trap',
+  COMMUNITY_WARNING: 'Community Threat Warning',
+  FAKE_REVIEW: 'Fake Review Detected'
 };
 
 const confirmshamingRegex = /(No thanks.*pay full price|I hate saving money|I prefer to lose|I don\'t want free)/i;
 const scarcityRegex = /(only \d+ left in stock|hurry|almost gone|\d+ people are viewing|offer ends in \d+|limited time offer)/i;
+const subTrapRegex = /(auto-renew|free trial.*then|automatically renews at)/i;
 
 let detectedIssues = new Map();
 let userSettings = {
   checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
-  autoFix: false, whitelist: [], aiKey: ''
+  autoFix: false, whitelist: [], aiKey: '', firebaseId: '',
+  autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
 };
 let isWhitelisted = false;
 let aiScanned = false;
@@ -65,6 +72,32 @@ async function runAIScan(customText = null) {
   }
 }
 
+async function runFakeReviewScan(customText) {
+  if (!userSettings.aiKey || !customText) return;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `You are an expert at detecting fake, bot-generated, or incentivized e-commerce reviews. Analyze this review and state if it seems fake or genuine, and briefly explain why. Review: ${customText}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    
+    const searchSnippet = customText.substring(0, 30).trim();
+    const target = Array.from(document.querySelectorAll('*')).find(el => 
+      el.children.length === 0 && el.textContent.includes(searchSnippet)
+    ) || document.body;
+    
+    addIssue(target, DARK_PATTERNS.FAKE_REVIEW, reply);
+  } catch (e) {
+    console.warn("Fake Review Scan Network Error:", e.message);
+  }
+}
+
 function scanElement(el) {
   if (el.nodeType !== Node.ELEMENT_NODE) return;
 
@@ -90,6 +123,27 @@ function scanElement(el) {
       } else if (userSettings.checkScarcity && scarcityRegex.test(text)) {
         const hasBadChild = Array.from(el.querySelectorAll('*')).some(desc => scarcityRegex.test(desc.textContent || ''));
         if (!hasBadChild) addIssue(el, DARK_PATTERNS.FAKE_SCARCITY, `High-pressure sales tactic detected: "${text.trim().substring(0,30)}..."`);
+      } else if (userSettings.highlightSubTraps && subTrapRegex.test(text)) {
+        const hasBadChild = Array.from(el.querySelectorAll('*')).some(desc => subTrapRegex.test(desc.textContent || ''));
+        if (!hasBadChild) {
+          const style = window.getComputedStyle(el);
+          if (parseInt(style.fontSize) < 14 || style.color === '#777' || parseFloat(style.opacity) < 0.7) {
+            el.style.fontSize = '18px'; el.style.color = '#e74c3c'; el.style.fontWeight = 'bold';
+            addIssue(el, DARK_PATTERNS.SUBSCRIPTION_TRAP, `Hidden subscription terms enlarged for visibility.`);
+          }
+        }
+      }
+    }
+  }
+
+  // Cookie Rejecter
+  if (userSettings.autoRejectCookies && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
+    const text = (el.textContent || '').toLowerCase();
+    if (text === 'reject all' || text === 'decline' || text === 'only essential cookies' || text === 'manage preferences') {
+      if (!el.hasAttribute('data-dp-cookie-clicked')) {
+        el.setAttribute('data-dp-cookie-clicked', 'true');
+        el.click();
+        addIssue(el, DARK_PATTERNS.COOKIE_BANNER, 'Auto-Reject Cookies triggered!');
       }
     }
   }
@@ -185,18 +239,81 @@ const observer = new MutationObserver((mutations) => {
   });
 });
 
+let maxPriceSeen = 0;
+function initCheckoutTracker() {
+  if (!userSettings.trackHiddenFees) return;
+  setInterval(() => {
+    if (isWhitelisted || !userSettings.trackHiddenFees) return;
+    const priceElements = Array.from(document.querySelectorAll('*')).filter(el => 
+      el.children.length === 0 && /\$[\d,]+\.\d{2}/.test(el.textContent)
+    );
+    let currentMax = maxPriceSeen;
+    let maxElement = null;
+    priceElements.forEach(el => {
+      const match = el.textContent.match(/\$([\d,]+\.\d{2})/);
+      if (match) {
+        const val = parseFloat(match[1].replace(/,/g, ''));
+        if (val > currentMax) {
+          currentMax = val;
+          maxElement = el;
+        }
+      }
+    });
+    
+    if (maxPriceSeen > 0 && currentMax > maxPriceSeen && currentMax < maxPriceSeen * 1.5) {
+      const pageText = document.body.innerText.toLowerCase();
+      if (pageText.includes('fee') || pageText.includes('processing') || pageText.includes('service charge')) {
+        if (maxElement && !maxElement.hasAttribute('data-dp-fee-flagged')) {
+          maxElement.setAttribute('data-dp-fee-flagged', 'true');
+          addIssue(maxElement, DARK_PATTERNS.HIDDEN_FEE, 'Unexpected price spike detected (Hidden Fee/Sneak into basket)!');
+        }
+      }
+    }
+    if (currentMax > maxPriceSeen) maxPriceSeen = currentMax;
+  }, 2000);
+}
+
+function checkCommunityWarnings() {
+  if (!userSettings.communityWarnings || !userSettings.firebaseId) return;
+  const currentHostname = window.location.hostname;
+  fetch(`https://firestore.googleapis.com/v1/projects/${userSettings.firebaseId}/databases/(default)/documents:runQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'reported_sites' }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: 'url' },
+            op: 'EQUAL',
+            value: { stringValue: currentHostname }
+          }
+        }
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (Array.isArray(data) && data.length > 0 && data[0].document) {
+      addIssue(document.body, DARK_PATTERNS.COMMUNITY_WARNING, `This site has been reported ${data.length} times by the community for manipulative design!`);
+    }
+  })
+  .catch(err => console.warn("Community Warning Fetch Error:", err));
+}
+
 function initScanner() {
   scanWholePage();
   if (!isWhitelisted) {
     observer.observe(document.body, { childList: true, subtree: true });
-    // AI Scan is intentionally removed from here. 
-    // It now only runs on-demand when the user opens the Sidebar to save API Quota!
+    initCheckoutTracker();
+    checkCommunityWarnings();
   }
 }
 
 chrome.storage.sync.get({
   checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
-  autoFix: false, whitelist: [], aiKey: ''
+  autoFix: false, whitelist: [], aiKey: '', firebaseId: '',
+  autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
 }, (items) => {
   userSettings = items;
   isWhitelisted = items.whitelist.includes(window.location.hostname);
@@ -225,7 +342,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     clearIssues();
     chrome.storage.sync.get({
       checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
-      autoFix: false, whitelist: [], aiKey: ''
+      autoFix: false, whitelist: [], aiKey: '', firebaseId: '',
+      autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
     }, (items) => {
       const oldKey = userSettings.aiKey;
       userSettings = items;
@@ -233,21 +351,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       scanWholePage();
       sendResponse({ issues: Array.from(detectedIssues.values()), whitelisted: isWhitelisted });
 
-      // If they just pasted a new AI key, instantly trigger the AI scan in the background!
       if (userSettings.aiKey && userSettings.aiKey !== oldKey) {
         aiScanned = false;
         runAIScan();
       }
     });
   } else if (request.action === 'context_menu_scan') {
-    // 1. Tell background.js to light up the badge and open the sidebar!
     chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }); 
-    chrome.runtime.sendMessage({ action: 'hotkey_triggered' }); // Re-use the hotkey relay to force open the sidebar!
-    
-    // 2. Scan the highlighted text!
+    chrome.runtime.sendMessage({ action: 'hotkey_triggered' }); 
     runAIScan(request.text);
+  } else if (request.action === 'fake_review_scan') {
+    chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }); 
+    chrome.runtime.sendMessage({ action: 'hotkey_triggered' }); 
+    runFakeReviewScan(request.text);
   } else if (request.action === 'toggleSider') {
-    // When the user opens the Sidebar (shortcut or icon), run the AI scan!
     if (!isWhitelisted) runAIScan();
   }
 });

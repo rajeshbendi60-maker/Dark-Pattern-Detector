@@ -140,7 +140,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   chrome.storage.sync.get({
     checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
-    autoFix: false, aiKey: '', firebaseId: ''
+    autoFix: false, aiKey: '', firebaseId: '',
+    autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
   }, (items) => {
     const hiddenToggle = document.getElementById('hidden-btn-toggle');
     if (hiddenToggle) hiddenToggle.checked = items.checkHidden;
@@ -157,6 +158,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoFixToggle = document.getElementById('auto-fix-toggle');
     if (autoFixToggle) autoFixToggle.checked = items.autoFix;
     
+    const autoRejectCookiesToggle = document.getElementById('autoRejectCookies');
+    if (autoRejectCookiesToggle) autoRejectCookiesToggle.checked = items.autoRejectCookies;
+    
+    const trackHiddenFeesToggle = document.getElementById('trackHiddenFees');
+    if (trackHiddenFeesToggle) trackHiddenFeesToggle.checked = items.trackHiddenFees;
+    
+    const highlightSubTrapsToggle = document.getElementById('highlightSubTraps');
+    if (highlightSubTrapsToggle) highlightSubTrapsToggle.checked = items.highlightSubTraps;
+    
+    const communityWarningsToggle = document.getElementById('communityWarnings');
+    if (communityWarningsToggle) communityWarningsToggle.checked = items.communityWarnings;
+
     const apiKeyInput = document.getElementById('api-key');
     if (apiKeyInput) apiKeyInput.value = items.aiKey;
     
@@ -170,6 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const preCheckToggle = document.getElementById('checkPreChecked');
     const confirmshamingToggle = document.getElementById('checkConfirmshaming');
     const scarcityToggle = document.getElementById('checkScarcity');
+    
+    const autoRejectCookiesToggle = document.getElementById('autoRejectCookies');
+    const trackHiddenFeesToggle = document.getElementById('trackHiddenFees');
+    const highlightSubTrapsToggle = document.getElementById('highlightSubTraps');
+    const communityWarningsToggle = document.getElementById('communityWarnings');
+
     const apiKeyInput = document.getElementById('api-key');
     const firebaseIdInput = document.getElementById('firebase-id');
 
@@ -179,6 +198,10 @@ document.addEventListener('DOMContentLoaded', () => {
       checkScarcity: scarcityToggle ? scarcityToggle.checked : true,
       checkHidden: hiddenToggle ? hiddenToggle.checked : true,
       autoFix: autoFixToggle ? autoFixToggle.checked : false,
+      autoRejectCookies: autoRejectCookiesToggle ? autoRejectCookiesToggle.checked : true,
+      trackHiddenFees: trackHiddenFeesToggle ? trackHiddenFeesToggle.checked : true,
+      highlightSubTraps: highlightSubTrapsToggle ? highlightSubTrapsToggle.checked : true,
+      communityWarnings: communityWarningsToggle ? communityWarningsToggle.checked : true,
       aiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
       firebaseId: firebaseIdInput ? firebaseIdInput.value.trim() : ''
     }, () => {
