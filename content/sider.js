@@ -27,6 +27,8 @@ function injectSidebar() {
 
   // Securely fetch our exact Tab ID and set the URL
   chrome.runtime.sendMessage({ action: 'GET_MY_TAB_ID' }, (response) => {
+    if (chrome.runtime.lastError) { /* ignore */ }
+    
     if (response && response.tabId) {
       iframe.src = chrome.runtime.getURL('popup/popup.html') + `?tabId=${response.tabId}&hostname=${response.hostname}`;
     } else {

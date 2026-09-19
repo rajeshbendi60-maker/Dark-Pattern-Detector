@@ -22,26 +22,73 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Analyze for Fake Review (AI)',
     contexts: ['selection']
   });
+  chrome.contextMenus.create({
+    id: 'summarize_privacy',
+    title: 'Summarize Privacy Policy (AI)',
+    contexts: ['link']
+  });
+  chrome.contextMenus.create({
+    id: 'summarize_reviews',
+    title: 'Summarize All Reviews (AI)',
+    contexts: ['page']
+  });
+  chrome.contextMenus.create({
+    id: 'roach_motel_escape',
+    title: 'Roach Motel Escape Route (AI)',
+    contexts: ['page']
+  });
+  chrome.contextMenus.create({
+    id: 'translate_trick_checkbox',
+    title: 'Translate Confusing Checkbox (AI)',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'bait_switch_detector',
+    title: 'Analyze Discount Bait & Switch (AI)',
+    contexts: ['selection']
+  });
 });
+
+const safeSend = (tabId, msg) => {
+  try { chrome.tabs.sendMessage(tabId, msg).catch(()=>{}); } catch(e){}
+};
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'scan_dark_pattern') {
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'context_menu_scan',
-      text: info.selectionText
-    });
+    safeSend(tab.id, { action: 'context_menu_scan', text: info.selectionText });
   } else if (info.menuItemId === 'scan_fake_review') {
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'fake_review_scan',
-      text: info.selectionText
-    });
+    safeSend(tab.id, { action: 'fake_review_scan', text: info.selectionText });
+  } else if (info.menuItemId === 'summarize_reviews') {
+    safeSend(tab.id, { action: 'review_summary_scan' });
+  } else if (info.menuItemId === 'roach_motel_escape') {
+    safeSend(tab.id, { action: 'escape_roach_motel' });
+  } else if (info.menuItemId === 'translate_trick_checkbox') {
+    safeSend(tab.id, { action: 'translate_trick_checkbox', text: info.selectionText });
+  } else if (info.menuItemId === 'bait_switch_detector') {
+    safeSend(tab.id, { action: 'bait_switch_detector', text: info.selectionText });
+  } else if (info.menuItemId === 'summarize_privacy') {
+    safeSend(tab.id, { action: 'privacy_policy_scan', text: 'Fetching policy...' });
+    
+    fetch(info.linkUrl)
+      .then(res => res.text())
+      .then(html => {
+        const text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                         .replace(/<[^>]+>/g, ' ')
+                         .replace(/\s+/g, ' ')
+                         .substring(0, 10000);
+        safeSend(tab.id, { action: 'privacy_policy_scan', text: text, isFinal: true });
+      })
+      .catch(err => {
+        safeSend(tab.id, { action: 'privacy_policy_scan', text: 'Error fetching policy', isFinal: true, error: true });
+      });
   }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'hotkey_triggered') {
     if (sender.tab) {
-      chrome.tabs.sendMessage(sender.tab.id, { action: 'toggleSider' });
+      safeSend(sender.tab.id, { action: 'toggleSider' });
     }
     return true;
   }

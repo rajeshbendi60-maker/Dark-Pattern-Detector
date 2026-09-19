@@ -10,18 +10,27 @@ const DARK_PATTERNS = {
   HIDDEN_FEE: 'Hidden Fee Detected',
   SUBSCRIPTION_TRAP: 'Subscription Trap',
   COMMUNITY_WARNING: 'Community Threat Warning',
-  FAKE_REVIEW: 'Fake Review Detected'
+  FAKE_REVIEW: 'Fake Review Detected',
+  POPUP_BLOCKER: 'Deceptive Pop-up Blocked',
+  PRIVACY_SUMMARY: 'Privacy Policy Analysis',
+  REVIEW_SUMMARY: 'Honest Review Summary',
+  FAKE_TIMER: 'Fake Countdown Loop',
+  ROACH_MOTEL: 'Roach Motel Escaped',
+  TRICK_CHECKBOX: 'Trick Question Translated',
+  BAIT_SWITCH: 'Bait & Switch Discount'
 };
 
 const confirmshamingRegex = /(No thanks.*pay full price|I hate saving money|I prefer to lose|I don\'t want free)/i;
-const scarcityRegex = /(only \d+ left in stock|hurry|almost gone|\d+ people are viewing|offer ends in \d+|limited time offer)/i;
-const subTrapRegex = /(auto-renew|free trial.*then|automatically renews at)/i;
+const scarcityRegex = /(only \d+ left|almost gone|high demand|selling fast|Ends in \d+)/i;
+const subTrapRegex = /(auto-renew|free trial.*then)/i;
 
 let detectedIssues = new Map();
 let userSettings = {
   checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
   autoFix: false, whitelist: [], aiKey: '', firebaseId: '',
-  autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
+  autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true,
+  blockPopups: true, cloudSync: false,
+  detectFakeTimers: true, autoScrollTnC: true, autoClickShaming: true, voiceAssistant: true
 };
 let isWhitelisted = false;
 let aiScanned = false;
@@ -98,6 +107,116 @@ async function runFakeReviewScan(customText) {
   }
 }
 
+async function runPrivacyPolicyScan(policyText) {
+  if (!userSettings.aiKey || !policyText) return;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Summarize this Privacy Policy in 3 bullet points focusing on: what data they sell, how they track you, and anonymity. Keep it very short. Policy: ${policyText}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    addIssue(document.body, DARK_PATTERNS.PRIVACY_SUMMARY, reply);
+  } catch (e) {
+    console.warn("Privacy Scan Error:", e.message);
+  }
+}
+
+async function runReviewSummaryScan() {
+  if (!userSettings.aiKey) return;
+  const reviewNodes = Array.from(document.querySelectorAll('[class*="review"], [id*="review"]'));
+  const allText = reviewNodes.map(el => el.textContent).join(' ').replace(/\s+/g, ' ').substring(0, 15000);
+  if (allText.length < 50) return;
+  
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Summarize the pros and cons of this product based on these reviews. Also mention if they seem artificially generated. Keep it concise. Reviews: ${allText}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    addIssue(document.body, DARK_PATTERNS.REVIEW_SUMMARY, reply);
+  } catch (e) {
+    console.warn("Review Summary Error:", e.message);
+  }
+}
+
+async function runRoachMotelEscape() {
+  if (!userSettings.aiKey) return;
+  const links = Array.from(document.querySelectorAll('a, button')).map((el, i) => `[${i}] ${el.textContent.trim().substring(0, 50)}`);
+  const allText = links.join(' | ').replace(/\s+/g, ' ').substring(0, 15000);
+  
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `I am trying to cancel my subscription or delete my account. Based on these link and button texts, reply ONLY with the exact integer index in the brackets (e.g. 14) of the most likely button to cancel/delete. If none, reply 'none'. Texts: ${allText}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    if (reply !== 'none' && !isNaN(parseInt(reply))) {
+      const target = document.querySelectorAll('a, button')[parseInt(reply)];
+      if (target) {
+        addIssue(target, DARK_PATTERNS.ROACH_MOTEL, 'AI found the hidden cancellation/delete link for you!');
+        target.scrollIntoView({behavior: "smooth", block: "center", inline: "nearest"});
+      }
+    } else {
+      addIssue(document.body, DARK_PATTERNS.ROACH_MOTEL, 'AI could not find any obvious cancellation links on this page.');
+    }
+  } catch (e) {
+    console.warn("Roach Motel Error:", e.message);
+  }
+}
+
+async function runTrickCheckboxScan(text) {
+  if (!userSettings.aiKey || !text) return;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Translate this confusing double-negative checkbox label into plain English. Start your response with "Wait! Checking this means...". Text: ${text}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    addIssue(document.body, DARK_PATTERNS.TRICK_CHECKBOX, reply);
+  } catch (e) {
+    console.warn("Trick Checkbox Error:", e.message);
+  }
+}
+
+async function runBaitSwitchScan(text) {
+  if (!userSettings.aiKey || !text) return;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${userSettings.aiKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `I am looking at this product price/text. Is this a realistic discount or a fake 'Bait & Switch' price anchor? Keep it concise. Text: ${text}` }] }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) return;
+    const reply = data.candidates[0].content.parts[0].text.trim();
+    addIssue(document.body, DARK_PATTERNS.BAIT_SWITCH, reply);
+  } catch (e) {
+    console.warn("Bait Switch Error:", e.message);
+  }
+}
+
 function scanElement(el) {
   if (el.nodeType !== Node.ELEMENT_NODE) return;
 
@@ -119,7 +238,18 @@ function scanElement(el) {
     if (text.length > 0 && text.length < 300) { 
       if (userSettings.checkConfirmshaming && confirmshamingRegex.test(text)) {
         const hasBadChild = Array.from(el.querySelectorAll('*')).some(desc => confirmshamingRegex.test(desc.textContent || ''));
-        if (!hasBadChild) addIssue(el, DARK_PATTERNS.CONFIRMSHAMING, `Manipulative wording found: "${text.trim().substring(0,30)}..."`);
+        if (!hasBadChild) {
+          if (userSettings.autoClickShaming && (el.tagName === 'A' || el.tagName === 'BUTTON' || el.getAttribute('role') === 'button')) {
+            if (!el.hasAttribute('data-dp-shame-clicked')) {
+              el.setAttribute('data-dp-shame-clicked', 'true');
+              el.click();
+              el.style.display = 'none';
+              addIssue(document.body, DARK_PATTERNS.CONFIRMSHAMING, `Auto-clicked and hid guilt-trip button: "${text.trim().substring(0,30)}..."`);
+            }
+          } else {
+            addIssue(el, DARK_PATTERNS.CONFIRMSHAMING, `Manipulative wording found: "${text.trim().substring(0,30)}..."`);
+          }
+        }
       } else if (userSettings.checkScarcity && scarcityRegex.test(text)) {
         const hasBadChild = Array.from(el.querySelectorAll('*')).some(desc => scarcityRegex.test(desc.textContent || ''));
         if (!hasBadChild) addIssue(el, DARK_PATTERNS.FAKE_SCARCITY, `High-pressure sales tactic detected: "${text.trim().substring(0,30)}..."`);
@@ -169,6 +299,56 @@ function scanElement(el) {
       }
     }
   }
+
+  // T&C Auto-Scroller
+  if (userSettings.autoScrollTnC && (el.tagName === 'DIV' || el.tagName === 'TEXTAREA' || el.tagName === 'IFRAME')) {
+    const style = window.getComputedStyle(el);
+    if ((style.overflowY === 'scroll' || style.overflowY === 'auto' || el.tagName === 'TEXTAREA') && el.scrollHeight > el.clientHeight + 20) {
+      const text = (el.textContent || '').toLowerCase();
+      if (text.includes('terms') || text.includes('conditions') || text.includes('agreement') || text.includes('policy')) {
+        if (!el.hasAttribute('data-dp-scrolled')) {
+          el.setAttribute('data-dp-scrolled', 'true');
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+    }
+  }
+
+  // Deceptive Pop-up Blocker
+  if (userSettings.blockPopups && (el.tagName === 'DIV' || el.tagName === 'ASIDE' || el.tagName === 'SECTION')) {
+    const style = window.getComputedStyle(el);
+    if (style.position === 'fixed' && parseInt(style.zIndex) > 50) {
+      const rect = el.getBoundingClientRect();
+      const isLarge = rect.width > window.innerWidth * 0.4 && rect.height > window.innerHeight * 0.4;
+      if (isLarge) {
+        const text = (el.textContent || '').toLowerCase();
+        if (text.includes('sign up') || text.includes('newsletter') || text.includes('10% off') || text.includes('don\'t leave')) {
+          if (!el.hasAttribute('data-dp-popup-blocked')) {
+            el.setAttribute('data-dp-popup-blocked', 'true');
+            el.style.display = 'none';
+            addIssue(document.body, DARK_PATTERNS.POPUP_BLOCKER, 'Aggressive pop-up overlay detected and automatically hidden.');
+          }
+        }
+      }
+    }
+  }
+
+  // Fake Countdown Detector
+  if (userSettings.detectFakeTimers && (el.tagName === 'SPAN' || el.tagName === 'DIV' || el.tagName === 'P')) {
+    const text = el.textContent.trim();
+    if (/^(\d{1,2}:){1,2}\d{2}$/.test(text) && text !== '00:00' && text !== '0:00' && text !== '00:00:00') {
+      const timerKey = 'dp_timer_' + location.pathname;
+      const stored = sessionStorage.getItem(timerKey);
+      if (stored) {
+        if (text === stored && !el.hasAttribute('data-dp-timer-flagged')) {
+          el.setAttribute('data-dp-timer-flagged', 'true');
+          addIssue(el, DARK_PATTERNS.FAKE_TIMER, `This countdown reset to ${text} on page load. It is artificially creating urgency.`);
+        }
+      } else {
+        sessionStorage.setItem(timerKey, text);
+      }
+    }
+  }
 }
 
 function addIssue(element, type, description) {
@@ -176,7 +356,7 @@ function addIssue(element, type, description) {
   element.setAttribute('data-dp-scanned', 'true');
   detectedIssues.set(element, { type, description });
   
-  chrome.storage.local.get(['lifetimeBlocked', 'lifetimeHistory'], (result) => {
+  chrome.storage.local.get(['lifetimeBlocked', 'lifetimeHistory', 'userId'], (result) => {
     const newTotal = (result.lifetimeBlocked || 0) + 1;
     const history = result.lifetimeHistory || [];
     
@@ -197,6 +377,15 @@ function addIssue(element, type, description) {
       lifetimeBlocked: newTotal,
       lifetimeHistory: history
     });
+
+    if (userSettings.cloudSync && userSettings.firebaseId && result.userId) {
+      const configToSync = { ...userSettings, lifetimeBlocked: newTotal };
+      fetch(`https://firestore.googleapis.com/v1/projects/${userSettings.firebaseId}/databases/(default)/documents/user_settings/${result.userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { config: { stringValue: JSON.stringify(configToSync) } } })
+      }).catch(e => console.warn('Leaderboard sync error:', e));
+    }
   });
   
   element.style.boxShadow = '0 0 0 4px rgba(231, 76, 60, 0.6)';
@@ -206,6 +395,12 @@ function addIssue(element, type, description) {
   element.style.animation = 'dpPulse 2s infinite';
   element.title = `Detected Dark Pattern: ${type}`;
   notifyBackground();
+
+  if (userSettings.voiceAssistant && 'speechSynthesis' in window) {
+    // Debounce speech slightly so it doesn't overlap crazy fast
+    const msg = new SpeechSynthesisUtterance(`Warning: ${type}`);
+    window.speechSynthesis.speak(msg);
+  }
 }
 
 let animationInjected = false;
@@ -219,7 +414,9 @@ function injectAnimation() {
 
 function notifyBackground() {
   const issuesArray = Array.from(detectedIssues.values());
-  chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: issuesArray.length, issues: issuesArray });
+  try {
+    chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: issuesArray.length, issues: issuesArray }).catch(() => {});
+  } catch(e) {}
 }
 
 function scanWholePage() {
@@ -343,7 +540,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.sync.get({
       checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
       autoFix: false, whitelist: [], aiKey: '', firebaseId: '',
-      autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
+      autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true,
+      blockPopups: true, cloudSync: false,
+      detectFakeTimers: true, autoScrollTnC: true, autoClickShaming: true, voiceAssistant: true
     }, (items) => {
       const oldKey = userSettings.aiKey;
       userSettings = items;
@@ -357,13 +556,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
   } else if (request.action === 'context_menu_scan') {
-    chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }); 
-    chrome.runtime.sendMessage({ action: 'hotkey_triggered' }); 
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
     runAIScan(request.text);
   } else if (request.action === 'fake_review_scan') {
-    chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }); 
-    chrome.runtime.sendMessage({ action: 'hotkey_triggered' }); 
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
     runFakeReviewScan(request.text);
+  } else if (request.action === 'review_summary_scan') {
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
+    runReviewSummaryScan();
+  } else if (request.action === 'privacy_policy_scan') {
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
+    if (request.isFinal && !request.error) {
+      runPrivacyPolicyScan(request.text);
+    } else if (request.error) {
+      addIssue(document.body, DARK_PATTERNS.PRIVACY_SUMMARY, 'Failed to fetch the privacy policy. Make sure it is a valid link.');
+    }
+  } else if (request.action === 'escape_roach_motel') {
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
+    runRoachMotelEscape();
+  } else if (request.action === 'translate_trick_checkbox') {
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
+    runTrickCheckboxScan(request.text);
+  } else if (request.action === 'bait_switch_detector') {
+    try { chrome.runtime.sendMessage({ type: 'DARK_PATTERNS_DETECTED', count: detectedIssues.size + 1 }).catch(()=>{}); } catch(e){}
+    try { chrome.runtime.sendMessage({ action: 'hotkey_triggered' }).catch(()=>{}); } catch(e){}
+    runBaitSwitchScan(request.text);
   } else if (request.action === 'toggleSider') {
     if (!isWhitelisted) runAIScan();
   }

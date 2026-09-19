@@ -33,7 +33,69 @@ document.addEventListener('DOMContentLoaded', () => {
   backBtn.addEventListener('click', () => { settingsView.style.display = 'none'; mainView.style.display = 'flex'; });
   
   analyticsBackBtn.addEventListener('click', () => { analyticsView.style.display = 'none'; mainView.style.display = 'flex'; });
+
+  const leaderboardBtn = document.getElementById('leaderboard-btn');
+  const leaderboardView = document.getElementById('leaderboard-view');
+  const leaderboardBackBtn = document.getElementById('leaderboard-back-btn');
+  const leaderboardList = document.getElementById('leaderboard-list');
+
+  leaderboardBackBtn.addEventListener('click', () => { leaderboardView.style.display = 'none'; mainView.style.display = 'flex'; });
   
+  leaderboardBtn.addEventListener('click', () => {
+    mainView.style.display = 'none';
+    leaderboardView.style.display = 'flex';
+    
+    // Fetch top users from Firebase
+    chrome.storage.sync.get(['firebaseId'], (res) => {
+      if (!res.firebaseId) {
+        leaderboardList.innerHTML = `<li style="text-align: center; color: #7f8c8d; padding: 20px;">Please enter your Firebase Project ID in Settings to view the Leaderboard.</li>`;
+        return;
+      }
+      
+      fetch(`https://firestore.googleapis.com/v1/projects/${res.firebaseId}/databases/(default)/documents/user_settings`)
+        .then(response => response.json())
+        .then(data => {
+          if (!data.documents) {
+            leaderboardList.innerHTML = `<li style="text-align: center; color: #7f8c8d; padding: 20px;">No global rankings found.</li>`;
+            return;
+          }
+          
+          let users = [];
+          data.documents.forEach(doc => {
+            const configStr = doc.fields && doc.fields.config ? doc.fields.config.stringValue : "{}";
+            try {
+              const config = JSON.parse(configStr);
+              if (config.lifetimeBlocked > 0) {
+                users.push({
+                  id: doc.name.split('/').pop().substring(0, 8),
+                  score: config.lifetimeBlocked
+                });
+              }
+            } catch(e) {}
+          });
+          
+          users.sort((a, b) => b.score - a.score);
+          
+          if (users.length === 0) {
+            leaderboardList.innerHTML = `<li style="text-align: center; color: #7f8c8d; padding: 20px;">No users have scored yet! Be the first!</li>`;
+          } else {
+            leaderboardList.innerHTML = users.slice(0, 50).map((u, i) => `
+              <li class="issue-item" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-weight: bold; font-size: 14px; margin-right: 10px; color: ${i===0?'#f1c40f':i===1?'#bdc3c7':i===2?'#cd7f32':'#7f8c8d'}">#${i+1}</span>
+                  <span style="font-size: 12px; color: #34495e;">User ${u.id}...</span>
+                </div>
+                <div style="font-size: 14px; font-weight: bold; color: #27ae60;">${u.score} 🛡️</div>
+              </li>
+            `).join('');
+          }
+        })
+        .catch(err => {
+          leaderboardList.innerHTML = `<li style="text-align: center; color: #e74c3c; padding: 20px;">Failed to fetch leaderboard. Make sure Firebase is configured.</li>`;
+        });
+    });
+  });
+
   const emptyHistoryUI = `
     <div style="text-align: center; padding: 40px 10px; color: #7f8c8d; background: white; border-radius: 8px; border: 1px dashed #bdc3c7; margin-top: 10px;">
       <div style="font-size: 50px; margin-bottom: 15px; opacity: 0.7;">📭</div>
@@ -129,7 +191,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const li = document.createElement('li'); li.className = 'issue-item';
         const title = document.createElement('div'); title.className = 'issue-type'; title.textContent = `🛑 ${issue.type}`;
         const desc = document.createElement('p'); desc.className = 'issue-desc'; desc.textContent = issue.description;
-        li.appendChild(title); li.appendChild(desc); issueList.appendChild(li);
+        li.appendChild(title); li.appendChild(desc); 
+        
+        if (issue.type === 'Privacy Policy Analysis') {
+          const btn = document.createElement('a');
+          btn.textContent = '📧 Send CCPA/GDPR Opt-Out Email';
+          btn.style.cssText = 'display: block; margin-top: 10px; padding: 8px; background: #e74c3c; color: white; text-align: center; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 11px;';
+          const domain = currentHostname.replace('www.', '');
+          const subject = encodeURIComponent('CCPA / GDPR Data Deletion Request');
+          const body = encodeURIComponent(`To the Privacy Officer at ${domain},\n\nI am writing to formally request that you delete any personal data you hold about me and opt me out of any future sale or sharing of my personal information, in accordance with applicable privacy laws (e.g. GDPR, CCPA).\n\nPlease confirm when this has been processed.\n\nThank you.`);
+          btn.href = `mailto:privacy@${domain}?subject=${subject}&body=${body}`;
+          btn.target = '_blank';
+          li.appendChild(btn);
+        }
+        
+        issueList.appendChild(li);
       });
     }
   }
@@ -138,73 +214,94 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputs = document.querySelectorAll('input[type="checkbox"]');
   const textInputs = document.querySelectorAll('input[type="text"], input[type="password"]');
   
-  chrome.storage.sync.get({
-    checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
-    autoFix: false, aiKey: '', firebaseId: '',
-    autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true
-  }, (items) => {
-    const hiddenToggle = document.getElementById('hidden-btn-toggle');
-    if (hiddenToggle) hiddenToggle.checked = items.checkHidden;
-    
-    const preCheckToggle = document.getElementById('checkPreChecked');
-    if (preCheckToggle) preCheckToggle.checked = items.checkPreChecked;
-    
-    const confirmshamingToggle = document.getElementById('checkConfirmshaming');
-    if (confirmshamingToggle) confirmshamingToggle.checked = items.checkConfirmshaming;
-    
-    const scarcityToggle = document.getElementById('checkScarcity');
-    if (scarcityToggle) scarcityToggle.checked = items.checkScarcity;
+  chrome.storage.local.get(['userId'], (res) => {
+    let userId = res.userId;
+    if (!userId) {
+      userId = 'user_' + Math.random().toString(36).substr(2, 9);
+      chrome.storage.local.set({userId});
+    }
 
-    const autoFixToggle = document.getElementById('auto-fix-toggle');
-    if (autoFixToggle) autoFixToggle.checked = items.autoFix;
-    
-    const autoRejectCookiesToggle = document.getElementById('autoRejectCookies');
-    if (autoRejectCookiesToggle) autoRejectCookiesToggle.checked = items.autoRejectCookies;
-    
-    const trackHiddenFeesToggle = document.getElementById('trackHiddenFees');
-    if (trackHiddenFeesToggle) trackHiddenFeesToggle.checked = items.trackHiddenFees;
-    
-    const highlightSubTrapsToggle = document.getElementById('highlightSubTraps');
-    if (highlightSubTrapsToggle) highlightSubTrapsToggle.checked = items.highlightSubTraps;
-    
-    const communityWarningsToggle = document.getElementById('communityWarnings');
-    if (communityWarningsToggle) communityWarningsToggle.checked = items.communityWarnings;
+    chrome.storage.sync.get({
+      checkPreChecked: true, checkConfirmshaming: true, checkScarcity: true, checkHidden: true,
+      autoFix: false, aiKey: '', firebaseId: '',
+      autoRejectCookies: true, trackHiddenFees: true, highlightSubTraps: true, communityWarnings: true,
+      blockPopups: true, cloudSync: false,
+      detectFakeTimers: true, autoScrollTnC: true, autoClickShaming: true, voiceAssistant: true
+    }, (items) => {
+      
+      const loadUI = (config) => {
+        const setChecked = (id, val) => { const el = document.getElementById(id); if(el) el.checked = val; };
+        setChecked('hidden-btn-toggle', config.checkHidden);
+        setChecked('checkPreChecked', config.checkPreChecked);
+        setChecked('checkConfirmshaming', config.checkConfirmshaming);
+        setChecked('checkScarcity', config.checkScarcity);
+        setChecked('auto-fix-toggle', config.autoFix);
+        setChecked('autoRejectCookies', config.autoRejectCookies);
+        setChecked('trackHiddenFees', config.trackHiddenFees);
+        setChecked('highlightSubTraps', config.highlightSubTraps);
+        setChecked('communityWarnings', config.communityWarnings);
+        setChecked('blockPopups', config.blockPopups);
+        setChecked('detectFakeTimers', config.detectFakeTimers);
+        setChecked('autoScrollTnC', config.autoScrollTnC);
+        setChecked('autoClickShaming', config.autoClickShaming);
+        setChecked('voiceAssistant', config.voiceAssistant);
+        setChecked('cloudSync', config.cloudSync);
+        
+        const apiKeyInput = document.getElementById('api-key');
+        if (apiKeyInput) apiKeyInput.value = config.aiKey;
+        const firebaseIdInput = document.getElementById('firebase-id');
+        if (firebaseIdInput) firebaseIdInput.value = config.firebaseId;
+      };
 
-    const apiKeyInput = document.getElementById('api-key');
-    if (apiKeyInput) apiKeyInput.value = items.aiKey;
-    
-    const firebaseIdInput = document.getElementById('firebase-id');
-    if (firebaseIdInput) firebaseIdInput.value = items.firebaseId;
-  });
+      if (items.cloudSync && items.firebaseId) {
+        fetch(`https://firestore.googleapis.com/v1/projects/${items.firebaseId}/databases/(default)/documents/user_settings/${userId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.fields && data.fields.config) {
+              const remoteItems = JSON.parse(data.fields.config.stringValue);
+              chrome.storage.sync.set(remoteItems, () => loadUI(remoteItems));
+            } else {
+              loadUI(items);
+            }
+          }).catch(() => loadUI(items));
+      } else {
+        loadUI(items);
+      }
+    });
 
-  const saveSettings = () => {
-    const hiddenToggle = document.getElementById('hidden-btn-toggle');
-    const autoFixToggle = document.getElementById('auto-fix-toggle');
-    const preCheckToggle = document.getElementById('checkPreChecked');
-    const confirmshamingToggle = document.getElementById('checkConfirmshaming');
-    const scarcityToggle = document.getElementById('checkScarcity');
-    
-    const autoRejectCookiesToggle = document.getElementById('autoRejectCookies');
-    const trackHiddenFeesToggle = document.getElementById('trackHiddenFees');
-    const highlightSubTrapsToggle = document.getElementById('highlightSubTraps');
-    const communityWarningsToggle = document.getElementById('communityWarnings');
+    const saveSettings = () => {
+      const getChecked = (id, def) => { const el = document.getElementById(id); return el ? el.checked : def; };
+      const config = {
+        checkPreChecked: getChecked('checkPreChecked', true),
+        checkConfirmshaming: getChecked('checkConfirmshaming', true),
+        checkScarcity: getChecked('checkScarcity', true),
+        checkHidden: getChecked('hidden-btn-toggle', true),
+        autoFix: getChecked('auto-fix-toggle', false),
+        autoRejectCookies: getChecked('autoRejectCookies', true),
+        trackHiddenFees: getChecked('trackHiddenFees', true),
+        highlightSubTraps: getChecked('highlightSubTraps', true),
+        communityWarnings: getChecked('communityWarnings', true),
+        blockPopups: getChecked('blockPopups', true),
+        detectFakeTimers: getChecked('detectFakeTimers', true),
+        autoScrollTnC: getChecked('autoScrollTnC', true),
+        autoClickShaming: getChecked('autoClickShaming', true),
+        voiceAssistant: getChecked('voiceAssistant', true),
+        cloudSync: getChecked('cloudSync', false),
+        aiKey: document.getElementById('api-key') ? document.getElementById('api-key').value.trim() : '',
+        firebaseId: document.getElementById('firebase-id') ? document.getElementById('firebase-id').value.trim() : ''
+      };
 
-    const apiKeyInput = document.getElementById('api-key');
-    const firebaseIdInput = document.getElementById('firebase-id');
-
-    chrome.storage.sync.set({
-      checkPreChecked: preCheckToggle ? preCheckToggle.checked : true,
-      checkConfirmshaming: confirmshamingToggle ? confirmshamingToggle.checked : true,
-      checkScarcity: scarcityToggle ? scarcityToggle.checked : true,
-      checkHidden: hiddenToggle ? hiddenToggle.checked : true,
-      autoFix: autoFixToggle ? autoFixToggle.checked : false,
-      autoRejectCookies: autoRejectCookiesToggle ? autoRejectCookiesToggle.checked : true,
-      trackHiddenFees: trackHiddenFeesToggle ? trackHiddenFeesToggle.checked : true,
-      highlightSubTraps: highlightSubTrapsToggle ? highlightSubTrapsToggle.checked : true,
-      communityWarnings: communityWarningsToggle ? communityWarningsToggle.checked : true,
-      aiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
-      firebaseId: firebaseIdInput ? firebaseIdInput.value.trim() : ''
-    }, () => {
+      chrome.storage.sync.set(config, () => {
+        if (config.cloudSync && config.firebaseId) {
+          chrome.storage.local.get(['lifetimeBlocked'], (localRes) => {
+            config.lifetimeBlocked = localRes.lifetimeBlocked || 0;
+            fetch(`https://firestore.googleapis.com/v1/projects/${config.firebaseId}/databases/(default)/documents/user_settings/${userId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: { config: { stringValue: JSON.stringify(config) } } })
+            });
+          });
+        }
       // INSTANT LIVE RELOAD: Immediately trigger a rescan and redraw the UI
       if (currentTabId) {
         chrome.tabs.sendMessage(currentTabId, { action: 'forceRescan' }, (response) => {
@@ -216,6 +313,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
   inputs.forEach(input => input.addEventListener('change', saveSettings));
   textInputs.forEach(input => input.addEventListener('input', saveSettings)); // Instantly save on paste!
+
+  const loadRulesBtn = document.getElementById('load-rules-btn');
+  const friendIdInput = document.getElementById('friend-id');
+  const ruleStatus = document.getElementById('rule-load-status');
+
+  if (loadRulesBtn && friendIdInput && ruleStatus) {
+    loadRulesBtn.addEventListener('click', () => {
+      const friendId = friendIdInput.value.trim();
+      if (!friendId) return;
+      
+      chrome.storage.sync.get(['firebaseId', 'whitelist'], (res) => {
+        if (!res.firebaseId) {
+          ruleStatus.style.display = 'block'; ruleStatus.style.color = '#e74c3c';
+          ruleStatus.textContent = 'Setup Cloud Sync first to load rules!';
+          return;
+        }
+        
+        loadRulesBtn.textContent = '...';
+        fetch(`https://firestore.googleapis.com/v1/projects/${res.firebaseId}/databases/(default)/documents/user_settings/${friendId}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.fields && data.fields.config) {
+              const remoteItems = JSON.parse(data.fields.config.stringValue);
+              if (remoteItems.whitelist && Array.isArray(remoteItems.whitelist)) {
+                const combined = [...new Set([...(res.whitelist || []), ...remoteItems.whitelist])];
+                chrome.storage.sync.set({ whitelist: combined }, () => {
+                  ruleStatus.style.display = 'block'; ruleStatus.style.color = '#2ecc71';
+                  ruleStatus.textContent = `Successfully merged ${remoteItems.whitelist.length} trusted sites!`;
+                  loadRulesBtn.textContent = 'Load';
+                  saveSettings(); // triggers reload
+                });
+              } else {
+                ruleStatus.style.display = 'block'; ruleStatus.style.color = '#e74c3c';
+                ruleStatus.textContent = 'Friend has no whitelist rules.';
+                loadRulesBtn.textContent = 'Load';
+              }
+            } else {
+              throw new Error('Not found');
+            }
+          })
+          .catch(() => {
+            ruleStatus.style.display = 'block'; ruleStatus.style.color = '#e74c3c';
+            ruleStatus.textContent = 'Failed to find that User ID.';
+            loadRulesBtn.textContent = 'Load';
+          });
+      });
+    });
+  }
+  }); // End of chrome.storage.local.get
 
   // Listen for delayed AI scan completions to live-update the Sidebar
   chrome.runtime.onMessage.addListener((message) => {
